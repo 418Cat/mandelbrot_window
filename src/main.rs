@@ -9,8 +9,6 @@ use sdl2::render::Canvas;
 
 use colorsys;
 use serde::{Serialize, Deserialize};
-
-use std::time::SystemTime;
 use std::env;
 
 mod mand;
@@ -55,7 +53,7 @@ pub fn main() {
     let mut limit: u32 = config_file.limit;
     let zoom: f64 = config_file.zoom;
 
-    let color_fn = mand::mand_colors::get_fn_from_enum(mand::mand_colors::ColorFn::Colors6);
+    let color_fn = mand::mand_colors::get_fn_from_enum(config_file.color_fn);
     
     let (mut canvas, mut event_pump) = init_canvas(res);
 
@@ -155,6 +153,10 @@ fn draw_mand(start_rect: [f64; 2], rect_size: [f64; 2], res: [u32; 2], canvas :&
         }
         print!("\r[{}>{}] {:.2}%. iter_nb:{}       ","=".repeat((x as f32 / res[0] as f32 * 50.) as usize), " ".repeat(49 - (x as f32 / res[0] as f32 * 50.) as usize), x as f32 / res[0] as f32 * 100., limit);
     }
+
+    let title = format!("({:.10}, {:.10});({:.10}, {:.10})", start_rect[0], start_rect[1], rect_size[0], rect_size[1]);
+    canvas.window_mut().set_title(&title).expect("Could not set title");
+
     canvas.present();
 }
 
@@ -179,9 +181,10 @@ fn init_canvas(res: [u32; 2]) -> (Canvas<sdl2::video::Window>, EventPump)
 
 fn save_img_buff(start_rect: [f64; 2], rect_size: [f64; 2], img_output_res: [u32; 2], limit: Option<u32>, color_fn: mand_colors::ColorFn, output_dir: String)
 {
-    let file_name = format!("{}/{}.png", output_dir.clone(), SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs());
+    let file_name = format!("coords:[{},{}];size:[{},{}];max:{}.png", start_rect[0], start_rect[1], rect_size[0], rect_size[1], limit.unwrap_or(100));
+    //let file_name = format!("{}/{}.png", output_dir.clone(), SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs());
 
-    match image::save_buffer(file_name, &mand::mand::get_mand_buff_img(start_rect, rect_size, img_output_res, limit, color_fn), img_output_res[0], img_output_res[1], image::ColorType::Rgb8)
+    match image::save_buffer(format!("{}/{}", output_dir, file_name), &mand::mand::get_mand_buff_img(start_rect, rect_size, img_output_res, limit, color_fn), img_output_res[0], img_output_res[1], image::ColorType::Rgb8)
     {
         Err(e) => println!("{e}"),
         Ok(_) => {},
@@ -212,8 +215,9 @@ fn get_dirs() -> (String, String) //store_dir, output_dir
     };
 
     let output_dir = format!("{}/output", store_dir);
+    println!("{store_dir}");
 
-    match std::fs::read(output_dir.clone())
+    match std::fs::read_dir(output_dir.clone())
     {
         Err(e) => 
         {

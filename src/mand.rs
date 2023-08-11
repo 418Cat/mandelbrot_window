@@ -65,7 +65,10 @@ pub mod mand_colors
         Colors3,
         Colors4,
         Colors5,
-        Colors6
+        Colors6,
+        Colors7,
+        Colors8,
+        Colors9
     }
 
     pub fn get_fn_from_enum(funct: ColorFn) -> fn(u32, u32) -> colorsys::Rgb
@@ -77,7 +80,10 @@ pub mod mand_colors
             ColorFn::Colors3 => color_3,
             ColorFn::Colors4 => color_4,
             ColorFn::Colors5 => color_5,
-            ColorFn::Colors6 => color_6
+            ColorFn::Colors6 => color_6,
+            ColorFn::Colors7 => color_7,
+            ColorFn::Colors8 => color_8,
+            ColorFn::Colors9 => color_9
         }
     }
 
@@ -125,6 +131,29 @@ pub mod mand_colors
         );
 
         colorsys::Rgb::new(red, green, blue, None)
+    }
 
+    fn color_7(iter: u32, max_iter: u32) -> colorsys::Rgb
+    {
+        if iter == max_iter
+        {
+            colorsys::Rgb::new(255., 255., 255., None)
+        }
+        else
+        {
+            colorsys::Rgb::new(0., 0., 0., None)
+        }
+    }
+
+    fn color_8(iter: u32, max_iter: u32) -> colorsys::Rgb
+    {
+        let col_fact = 255. * iter as f64 / max_iter as f64;
+        colorsys::Rgb::new(col_fact, col_fact, col_fact, None)
+    }
+
+    fn color_9(iter: u32, max_iter: u32) -> colorsys::Rgb
+    {
+        let col_fact = 255. * iter as f64 / max_iter as f64;
+        colorsys::Rgb::new(col_fact - 64., 255. * (1. - (iter as f64 / 50.0).cos())/2., col_fact.sin() * 255., None)
     }
 }
