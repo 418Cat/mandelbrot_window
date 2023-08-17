@@ -47,7 +47,7 @@ pub fn main() {
 
     let config_file: Conf = confy::load_path::<Conf>(format!("{store_dir}/config")).unwrap();
 
-    let res: [u32; 2] = config_file.res;
+    let mut res: [u32; 2] = config_file.res;
     let mut start_rect: [f64; 2] = config_file.start_rect;
     let mut rect_size: [f64; 2] = config_file.rect_size;
     let mut limit: u32 = config_file.limit;
@@ -125,11 +125,27 @@ pub fn main() {
                                 zoom_fn(&mut start_rect, &mut rect_size, zoom);
                                 save_img_buff(start_rect, rect_size, config_file.img_output_res, Some(limit), config_file.color_fn, output_dir.clone());
                             }
-                        },
+                        }
                         _ => {}
                     }
                     
                 }
+
+                Event::Window {win_event, ..} =>
+                {
+                    match win_event
+                    {
+                        sdl2::event::WindowEvent::Resized(x, y) =>
+                        {
+                            res = [x as u32, y as u32];
+                            canvas.window_mut().set_size(res[0], res[1]).unwrap();
+                            rect_size[1] = rect_size[0] * res[1] as f64 / res[0] as f64;
+                            draw_mand(start_rect, rect_size, res, &mut canvas, Some(limit), color_fn);
+                        }
+                        _ => {}
+                    }
+                }
+
                 _ => {}
             }
         }
@@ -173,6 +189,7 @@ fn init_canvas(res: [u32; 2]) -> (Canvas<sdl2::video::Window>, EventPump)
 
     let window = video_subsystem.window("mandelbrot", res[0], res[1])
         .position_centered()
+        .resizable()
         .build()
         .unwrap();
 
@@ -202,7 +219,7 @@ fn zoom_fn(start_rect: &mut [f64; 2], rect_size: &mut [f64; 2], zoom: f64)
         rect_size[1] + (rect_size[1]/zoom) * 2.];
 }
 
-fn get_dirs() -> (String, String) //store_dir, output_dir
+fn get_dirs() -> (String, String) //store_dir, output_dir, sep
 {
     let mut store_dir = String::from(".");
 
@@ -221,7 +238,8 @@ fn get_dirs() -> (String, String) //store_dir, output_dir
     {
         Err(e) => 
         {
-            if e.raw_os_error().unwrap() == 2
+            let not_found = if std::env::consts::OS == "windows" {3} else {2};
+            if e.raw_os_error().unwrap() == not_found
             {
                 let dirbuild = std::fs::DirBuilder::new();
                 match dirbuild.create(output_dir.clone())
