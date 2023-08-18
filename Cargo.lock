@@ -335,6 +335,7 @@ dependencies = [
  "confy",
  "image",
  "num-complex",
+ "rayon",
  "sdl2",
  "serde",
  "time",

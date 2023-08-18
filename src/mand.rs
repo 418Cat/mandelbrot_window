@@ -1,8 +1,11 @@
 pub mod mand 
 {
+    use std::sync::atomic::AtomicU32;
+
     use num_complex::ComplexFloat;
 
     use super::mand_colors;
+    use rayon::prelude::{IntoParallelIterator, ParallelIterator, ParallelExtend};
 
     pub fn get_mand_point(coords: [f64; 2], limit: Option<u32>) -> u32
     {
@@ -34,20 +37,43 @@ pub mod mand
 
         let color_fn: fn(u32, u32) -> colorsys::Rgb = mand_colors::get_fn_from_enum(color_fn);
 
-        for x in 0..res[0]
-        {
-            for y in 0..res[1]
-            {
-                let n = get_mand_point(
-                    [(start_rect[0] + res_fact_x * x as f64),
-                    (start_rect[1] + res_fact_y * y as f64)],
-                    Some(limit));
-                
-                let pix_color: colorsys::Rgb = color_fn(n, limit);
-                img_buff.put_pixel(x, y, image::Rgb([pix_color.red() as u8, pix_color.green() as u8, pix_color.blue() as u8]));
+        let mut mand_data: Vec<Vec<u32>> = Vec::new();
 
+        let count = AtomicU32::new(0);
+
+        mand_data.par_extend
+        (
+            (0..res[0]).into_par_iter().map
+            (
+                |x| 
+                {
+                    let mut x_mand: Vec<u32> = Vec::new();
+
+                    x_mand.par_extend
+                    (
+                        (0..res[1]).into_par_iter().map
+                        (
+                    |y|
+                            {
+                                get_mand_point([start_rect[0] + res_fact_x * x as f64, start_rect[1] + res_fact_y * y as f64], Some(limit))
+                            }
+                        )
+                    );
+                    let nb = count.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+                print!("\r[{}>{}] {:.2}%. iter_nb:{}       ", "=".repeat((nb as f32 / res[0] as f32 * 50.) as usize), " ".repeat(49 - (nb as f32 / res[0] as f32 * 50.) as usize), nb as f32 / res[0] as f32 * 100., limit);
+                    x_mand
+                }
+            )
+        );
+
+        for x in 0..res[0] as usize
+        {
+            for y in 0..res[1] as usize
+            {
+                let pix_color = color_fn(mand_data[x][y], limit);
+                img_buff.put_pixel(x as u32, y as u32, image::Rgb([pix_color.red() as u8, pix_color.green() as u8, pix_color.blue() as u8]));
             }
-            print!("\r[{}>{}] {:.2}%. iter_nb:{}       ","=".repeat((x as f32 / res[0] as f32 * 50.) as usize), " ".repeat(49 - (x as f32 / res[0] as f32 * 50.) as usize), x as f32 / res[0] as f32 * 100., limit);
+            
         }
 
         img_buff

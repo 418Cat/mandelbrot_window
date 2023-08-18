@@ -1,6 +1,7 @@
 extern crate sdl2;
 
 use mand::mand_colors;
+use rayon::prelude::{IntoParallelIterator, ParallelIterator, ParallelExtend};
 use sdl2::EventPump;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
@@ -9,7 +10,7 @@ use sdl2::render::Canvas;
 
 use colorsys;
 use serde::{Serialize, Deserialize};
-use std::env;
+use std::{env, borrow::BorrowMut, ops::{Add, AddAssign}, sync::{Arc, atomic::AtomicU32}};
 
 mod mand;
 
@@ -60,6 +61,9 @@ pub fn main() {
     draw_mand(start_rect, rect_size, res, &mut canvas, Some(limit), color_fn);
 
     'running: loop {
+
+        let mut changed = false;
+
         for event in event_pump.poll_iter() {
             match event {
                 Event::Quit {..} |
@@ -71,7 +75,7 @@ pub fn main() {
                     if y != 0
                     {
                         zoom_fn(&mut start_rect, &mut rect_size, zoom * y as f64);
-                        draw_mand(start_rect, rect_size, res, &mut canvas, Some(limit), color_fn);
+                        changed = true;
                     }
                 },
                 Event::MouseButtonDown { timestamp: _, window_id: _, which: _, mouse_btn: _, clicks: _, x, y } =>
@@ -83,7 +87,7 @@ pub fn main() {
                         mouse_in_rect[0] - rect_size[0]/2.,
                         mouse_in_rect[1] - rect_size[1]/2.
                     ];
-                    draw_mand(start_rect, rect_size, res, &mut canvas, Some(limit), color_fn);
+                    changed = true;
                 }
                 Event::KeyDown { timestamp: _, window_id: _, keycode, scancode: _, keymod: _, repeat: _ } =>
                 {
@@ -93,22 +97,22 @@ pub fn main() {
                         Keycode::Right =>
                         {
                             limit+= (limit as f64 / 4.).ceil() as u32;
-                            draw_mand(start_rect, rect_size, res, &mut canvas, Some(limit), color_fn);
+                            changed = true;
                         },
                         Keycode::Left =>
                         {
                             limit-= (limit as f64 / 4.) as u32;
-                            draw_mand(start_rect, rect_size, res, &mut canvas, Some(limit), color_fn);
+                            changed = true;
                         },
                         Keycode::Up =>
                         {
                             zoom_fn(&mut start_rect, &mut rect_size, -zoom);
-                            draw_mand(start_rect, rect_size, res, &mut canvas, Some(limit), color_fn);
+                            changed = true;
                         },
                         Keycode::Down =>
                         {
                             zoom_fn(&mut start_rect, &mut rect_size, zoom);
-                            draw_mand(start_rect, rect_size, res, &mut canvas, Some(limit), color_fn);
+                            changed = true;
                         },
                         Keycode::Return =>
                         {
@@ -140,7 +144,7 @@ pub fn main() {
                             res = [x as u32, y as u32];
                             canvas.window_mut().set_size(res[0], res[1]).unwrap();
                             rect_size[1] = rect_size[0] * res[1] as f64 / res[0] as f64;
-                            draw_mand(start_rect, rect_size, res, &mut canvas, Some(limit), color_fn);
+                            changed = true;
                         }
                         _ => {}
                     }
@@ -149,6 +153,12 @@ pub fn main() {
                 _ => {}
             }
         }
+
+        if changed
+        {
+            draw_mand(start_rect, rect_size, res, &mut canvas, Some(limit), color_fn);
+        }
+
     }
 }
 
@@ -157,17 +167,44 @@ fn draw_mand(start_rect: [f64; 2], rect_size: [f64; 2], res: [u32; 2], canvas :&
     let [x_res_factor, y_res_factor]: [f64; 2] = [rect_size[0]/res[0] as f64, rect_size[1]/res[1] as f64];
 
     let limit: u32 = limit.unwrap_or(100);
+    let mut mand_data: Vec<Vec<u32>> = Vec::new();
 
-    for x in 0..res[0]
+    let count = AtomicU32::new(0);
+
+    mand_data.par_extend
+    (
+        (0..res[0]).into_par_iter().map
+        (
+            |x| 
+            {
+                let mut x_mand: Vec<u32> = Vec::new();
+
+                x_mand.par_extend
+                (
+                    (0..res[1]).into_par_iter().map
+                    (
+                |y|
+                        {
+                            mand::mand::get_mand_point([start_rect[0] + x_res_factor * x as f64, start_rect[1] + y_res_factor * y as f64], Some(limit))
+                        }
+                    )
+                );
+                let nb = count.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+                print!("\r[{}>{}] {:.2}%. iter_nb:{}       ", "=".repeat((nb as f32 / res[0] as f32 * 50.) as usize), " ".repeat(49 - (nb as f32 / res[0] as f32 * 50.) as usize), nb as f32 / res[0] as f32 * 100., limit);
+                x_mand
+            }
+        )
+    );
+
+    for x in 0..res[0] as usize
     {
-        for y in 0..res[1]
+        for y in 0..res[1] as usize
         {
-            let n: u32 = mand::mand::get_mand_point([start_rect[0] + x_res_factor * x as f64, start_rect[1] + y_res_factor * y as f64], Some(limit));
-            let color = color_fn(n, limit);
+            let color = color_fn(mand_data[x][y], limit);
             canvas.set_draw_color(sdl2::pixels::Color::RGB(color.red() as u8, color.green() as u8, color.blue() as u8));
             canvas.draw_point(Point::new(x as i32, y as i32)).expect("Could not draw point");
         }
-        print!("\r[{}>{}] {:.2}%. iter_nb:{}       ","=".repeat((x as f32 / res[0] as f32 * 50.) as usize), " ".repeat(49 - (x as f32 / res[0] as f32 * 50.) as usize), x as f32 / res[0] as f32 * 100., limit);
+        
     }
 
     let title = format!("({:.10}, {:.10});({:.10}, {:.10})", start_rect[0], start_rect[1], rect_size[0], rect_size[1]);
